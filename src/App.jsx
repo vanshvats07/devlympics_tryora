@@ -505,9 +505,13 @@ function GuidancePanel({ screen, session, counts, dispatch, storageError, naviga
       <h2>{guidance.title}</h2><p className="guide-body">{guidance.body}</p>
       <div className="guide-action"><span className="guide-action-icon" aria-hidden="true">↳</span><p>{guidance.action}</p></div>
       <div className="guide-hint">
-        <div><span className="hint-spark">✦</span><strong>Need a hint?</strong></div>
-        {session.hintVisible ? <p className="hint-copy">{guidance.hint}</p> : <p className="hint-copy">A gentle nudge is here whenever you need one.</p>}
-        <button className="hint-button" onClick={() => session.hintVisible ? dispatch({ type: 'HIDE_HINT' }) : requestHint()}>{session.hintVisible ? 'Hide hint' : 'Show me a hint'} <span aria-hidden="true">{session.hintVisible ? '−' : '→'}</span></button>
+        <div><span className="hint-spark">✦</span><strong>{screen === 'success' ? 'Practice complete' : 'Need a hint?'}</strong></div>
+        <p className="hint-copy">{screen === 'success'
+          ? guidance.hint
+          : session.hintVisible ? guidance.hint : 'A gentle nudge is here whenever you need one.'}</p>
+        {screen !== 'success' && (
+          <button className="hint-button" onClick={() => session.hintVisible ? dispatch({ type: 'HIDE_HINT' }) : requestHint()}>{session.hintVisible ? 'Hide hint' : 'Show me a hint'} <span aria-hidden="true">{session.hintVisible ? '−' : '→'}</span></button>
+        )}
         <div className="hint-count">Hints requested <strong>{counts.hintRequests}</strong></div>
       </div>
       <div className="practice-activity">
@@ -612,6 +616,177 @@ function validChallengeStore(value) {
         && typeof attempt.result?.correct === 'boolean'
       )))
     && value.attempts.some((attempt) => attempt.id === value.activeAttemptId);
+}
+
+export const REMEDIATION_STORAGE_KEY = 'tryora.remediation.v1';
+export const RETEST_STORAGE_KEY = 'tryora.retest.v1';
+const REMEDIATION_SKILLS = ['recipient', 'amount', 'verification', 'incomplete'];
+const REMEDIATION_RECIPIENT = 'Leena Bose';
+const REMEDIATION_AMOUNT = 520;
+const RETEST_SCENARIOS = [
+  { recipient: 'Isha Nair', amount: 730, contacts: ['Isha Nair', 'Dev Bhatia', 'Rupa Sen'] },
+  { recipient: 'Dev Bhatia', amount: 540, contacts: ['Rupa Sen', 'Dev Bhatia', 'Isha Nair'] },
+  { recipient: 'Rupa Sen', amount: 860, contacts: ['Dev Bhatia', 'Isha Nair', 'Rupa Sen'] },
+];
+
+function getChallengeDiagnosis(attempt) {
+  if (!attempt || !Array.isArray(attempt.events)) return null;
+  if (attempt.status === 'submitted' && attempt.result?.correct === true) return null;
+
+  if (attempt.status === 'submitted' && attempt.result) {
+    if (attempt.result.reviewViewed !== true || attempt.result.verificationCompleted !== true) {
+      return { skill: 'verification', label: 'Review and verification', summary: 'The submitted challenge record shows the review or verification step was not completed.' };
+    }
+    if (attempt.result.correctRecipient !== true) {
+      return { skill: 'recipient', label: 'Recipient identification', summary: 'The submitted challenge record shows the selected recipient did not match the request.' };
+    }
+    if (attempt.result.correctAmount !== true) {
+      return { skill: 'amount', label: 'Amount matching', summary: 'The submitted challenge record shows the selected amount did not match the request.' };
+    }
+    return { skill: 'incomplete', label: 'Challenge completion', summary: 'The submitted challenge record did not satisfy all required checks.' };
+  }
+
+  const interacted = attempt.events.some((event) => [
+    'recipient_selected',
+    'amount_selected',
+    'review_requested',
+    'verification_completed',
+    'verification_unchecked',
+  ].includes(event.type));
+  if (!interacted || !['in_progress', 'abandoned'].includes(attempt.status)) return null;
+
+  if (attempt.events.some((event) => event.type === 'recipient_selected' && event.details.correct === false)) {
+    return { skill: 'recipient', label: 'Recipient identification', summary: 'The saved challenge events include a recipient selection that did not match the request.' };
+  }
+  if (attempt.events.some((event) => event.type === 'amount_selected' && event.details.correct === false)) {
+    return { skill: 'amount', label: 'Amount matching', summary: 'The saved challenge events include an amount selection that did not match the request.' };
+  }
+  if (attempt.step === 'review' && !attempt.verificationCompleted) {
+    return { skill: 'verification', label: 'Review and verification', summary: 'The challenge reached its review step, but the saved attempt was not verified and submitted.' };
+  }
+  return { skill: 'incomplete', label: 'Challenge completion', summary: 'The challenge has recorded interaction but no submitted answer.' };
+}
+
+function createRemediationRun() {
+  return {
+    id: `remediation-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    status: 'in_progress',
+    selectedRecipient: '',
+    selectedAmount: null,
+    recipientVerified: false,
+    amountVerified: false,
+    events: [],
+  };
+}
+
+function createRemediationSession(sourceAttempt, diagnosis) {
+  const run = createRemediationRun();
+  return {
+    id: `remediation-${sourceAttempt.id}`,
+    sourceChallengeId: sourceAttempt.id,
+    skill: diagnosis.skill,
+    issueLabel: diagnosis.label,
+    issueSummary: diagnosis.summary,
+    activeRunId: run.id,
+    runs: [run],
+  };
+}
+
+function validRemediationStore(value) {
+  return value?.schemaVersion === 1
+    && Array.isArray(value.sessions)
+    && value.sessions.every((session) => typeof session?.id === 'string'
+      && typeof session.sourceChallengeId === 'string'
+      && REMEDIATION_SKILLS.includes(session.skill)
+      && typeof session.issueLabel === 'string'
+      && typeof session.issueSummary === 'string'
+      && Array.isArray(session.runs)
+      && session.runs.length > 0
+      && session.runs.every((run) => typeof run.id === 'string'
+        && ['in_progress', 'completed', 'abandoned'].includes(run.status)
+        && typeof run.selectedRecipient === 'string'
+        && Array.isArray(run.events)
+        && run.events.every((event) => typeof event?.id === 'string'
+          && typeof event.type === 'string'
+          && typeof event.timestamp === 'string'
+          && event.details !== null
+          && typeof event.details === 'object'))
+      && session.runs.some((run) => run.id === session.activeRunId));
+}
+
+function createRetestAttempt(attemptNumber) {
+  const scenario = RETEST_SCENARIOS[(attemptNumber - 1) % RETEST_SCENARIOS.length];
+  const now = new Date().toISOString();
+  return {
+    id: `retest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    attemptNumber,
+    startedAt: now,
+    updatedAt: now,
+    step: 'request',
+    selectedRecipient: '',
+    selectedAmount: null,
+    reviewViewed: false,
+    recipientVerified: false,
+    amountVerified: false,
+    status: 'in_progress',
+    submittedAt: null,
+    result: null,
+    scenario,
+    events: [],
+  };
+}
+
+function validRetestStore(value) {
+  return value?.schemaVersion === 1
+    && Array.isArray(value.sessions)
+    && value.sessions.every((session) => typeof session?.id === 'string'
+      && typeof session.sourceChallengeId === 'string'
+      && Array.isArray(session.attempts)
+      && session.attempts.length > 0
+      && session.attempts.every((attempt) => typeof attempt?.id === 'string'
+        && Number.isInteger(attempt.attemptNumber)
+        && ['request', 'review'].includes(attempt.step)
+        && ['in_progress', 'submitted', 'abandoned'].includes(attempt.status)
+        && typeof attempt.scenario?.recipient === 'string'
+        && Number.isFinite(attempt.scenario?.amount)
+        && Array.isArray(attempt.events)
+        && attempt.events.every((event) => typeof event?.id === 'string'
+          && typeof event.type === 'string'
+          && typeof event.timestamp === 'string'
+          && event.details !== null
+          && typeof event.details === 'object')
+        && (attempt.status !== 'submitted' || typeof attempt.result?.correct === 'boolean'))
+      && session.attempts.some((attempt) => attempt.id === session.activeAttemptId));
+}
+
+function localEvent(type, details = {}) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    timestamp: new Date().toISOString(),
+    details,
+  };
+}
+
+function ensureRemediationSession(sourceAttempt) {
+  const diagnosis = getChallengeDiagnosis(sourceAttempt);
+  if (!diagnosis) return null;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(REMEDIATION_STORAGE_KEY) || '{"schemaVersion":1,"sessions":[]}');
+    const store = validRemediationStore(parsed) ? parsed : { schemaVersion: 1, sessions: [] };
+    const existing = store.sessions.find((session) => session.sourceChallengeId === sourceAttempt.id);
+    if (existing) return existing.id;
+    const session = createRemediationSession(sourceAttempt, diagnosis);
+    window.localStorage.setItem(REMEDIATION_STORAGE_KEY, JSON.stringify({
+      ...store,
+      sessions: [...store.sessions, session],
+    }));
+    return session.id;
+  } catch {
+    return null;
+  }
 }
 
 function initializeChallengeState() {
@@ -753,7 +928,281 @@ function useChallengeSession() {
   return [state, dispatch];
 }
 
-function ChallengeFeedback({ result, attemptNumber, onRestart }) {
+function appendRunEvent(run, event, changes = {}) {
+  return {
+    ...run,
+    ...changes,
+    events: [...run.events, event],
+  };
+}
+
+function updateRemediationRun(state, update) {
+  const session = state.store.sessions.find((item) => item.id === state.sessionId);
+  const run = session?.runs.find((item) => item.id === session.activeRunId);
+  if (!session || !run || run.status !== 'in_progress') return state;
+  const nextRun = update(run);
+  return {
+    ...state,
+    store: {
+      ...state.store,
+      sessions: state.store.sessions.map((item) => item.id === session.id
+        ? { ...item, runs: item.runs.map((candidate) => candidate.id === run.id ? nextRun : candidate) }
+        : item),
+    },
+    error: '',
+  };
+}
+
+function initializeRemediationState(sessionId) {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(REMEDIATION_STORAGE_KEY) || 'null');
+    if (!validRemediationStore(parsed) || !parsed.sessions.some((session) => session.id === sessionId)) {
+      return { sessionId, store: { schemaVersion: 1, sessions: [] }, error: 'The targeted practice record could not be found. Return to your Skill Passport and start it again.' };
+    }
+    return { sessionId, store: parsed, error: '' };
+  } catch {
+    return { sessionId, store: { schemaVersion: 1, sessions: [] }, error: 'Targeted practice data could not be read from this browser.' };
+  }
+}
+
+function canCompleteRemediation(skill, run) {
+  if (skill === 'recipient') return run.selectedRecipient === REMEDIATION_RECIPIENT;
+  if (skill === 'amount') return run.selectedAmount === REMEDIATION_AMOUNT;
+  if (skill === 'verification') return run.recipientVerified && run.amountVerified;
+  return run.selectedRecipient === REMEDIATION_RECIPIENT
+    && run.selectedAmount === REMEDIATION_AMOUNT
+    && run.recipientVerified
+    && run.amountVerified;
+}
+
+function remediationReducer(state, action) {
+  if (action.type === 'STORAGE_ERROR') return { ...state, error: action.message };
+  if (action.type === 'START_NEW_RUN') {
+    const session = state.store.sessions.find((item) => item.id === state.sessionId);
+    const active = session?.runs.find((run) => run.id === session.activeRunId);
+    if (!session || !active) return state;
+    const event = action.event;
+    const runs = active.status === 'in_progress'
+      ? session.runs.map((run) => run.id === active.id
+        ? { ...run, status: 'abandoned', events: [...run.events, event] }
+        : run)
+      : session.runs;
+    const next = createRemediationRun();
+    return {
+      ...state,
+      error: '',
+      store: {
+        ...state.store,
+        sessions: state.store.sessions.map((item) => item.id === session.id
+          ? { ...item, activeRunId: next.id, runs: [...runs, next] }
+          : item),
+      },
+    };
+  }
+  if (action.type === 'COMPLETE') {
+    const session = state.store.sessions.find((item) => item.id === state.sessionId);
+    const run = session?.runs.find((item) => item.id === session.activeRunId);
+    if (!session || !run || !canCompleteRemediation(session.skill, run)) {
+      return { ...state, error: 'Complete the required practice step before finishing this exercise.' };
+    }
+  }
+  return updateRemediationRun(state, (run) => {
+    if (action.type === 'SELECT_RECIPIENT') {
+      return appendRunEvent(run, action.event, { selectedRecipient: action.value });
+    }
+    if (action.type === 'SELECT_AMOUNT') {
+      return appendRunEvent(run, action.event, { selectedAmount: action.value });
+    }
+    if (action.type === 'VERIFY_RECIPIENT') {
+      return appendRunEvent(run, action.event, { recipientVerified: action.checked });
+    }
+    if (action.type === 'VERIFY_AMOUNT') {
+      return appendRunEvent(run, action.event, { amountVerified: action.checked });
+    }
+    if (action.type === 'COMPLETE') {
+      return appendRunEvent(run, action.event, {
+        status: 'completed',
+        completedAt: action.event.timestamp,
+      });
+    }
+    return run;
+  });
+}
+
+function useRemediationState(sessionId) {
+  const [state, dispatch] = useReducer(remediationReducer, sessionId, initializeRemediationState);
+  useEffect(() => {
+    if (!state.store.sessions.some((session) => session.id === state.sessionId)) return;
+    try {
+      window.localStorage.setItem(REMEDIATION_STORAGE_KEY, JSON.stringify(state.store));
+      if (state.error) dispatch({ type: 'STORAGE_ERROR', message: '' });
+    } catch {
+      dispatch({ type: 'STORAGE_ERROR', message: 'Targeted practice could not be saved on this device.' });
+    }
+  }, [state.store, state.sessionId]);
+  return [state, dispatch];
+}
+
+function updateRetestAttempt(state, update) {
+  const session = state.store.sessions.find((item) => item.remediationId === state.sessionId);
+  const attempt = session?.attempts.find((item) => item.id === session.activeAttemptId);
+  if (!session || !attempt || attempt.status !== 'in_progress') return state;
+  const nextAttempt = update(attempt);
+  return {
+    ...state,
+    error: '',
+    store: {
+      ...state.store,
+      sessions: state.store.sessions.map((item) => item.id === session.id
+        ? { ...item, attempts: item.attempts.map((candidate) => candidate.id === attempt.id ? nextAttempt : candidate) }
+        : item),
+    },
+  };
+}
+
+function initializeRetestState(sessionId, remediationSession) {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(RETEST_STORAGE_KEY) || '{"schemaVersion":1,"sessions":[]}');
+    const store = validRetestStore(parsed) ? parsed : { schemaVersion: 1, sessions: [] };
+    const session = store.sessions.find((item) => item.remediationId === sessionId);
+    return {
+      sessionId,
+      sourceChallengeId: remediationSession.sourceChallengeId,
+      store,
+      error: '',
+      session: session || null,
+    };
+  } catch {
+    return {
+      sessionId,
+      sourceChallengeId: remediationSession.sourceChallengeId,
+      store: { schemaVersion: 1, sessions: [] },
+      error: 'Fresh retest data could not be read from this browser.',
+      session: null,
+    };
+  }
+}
+
+function retestReducer(state, action) {
+  if (action.type === 'STORAGE_ERROR') return { ...state, error: action.message };
+  if (action.type === 'START_RETEST') {
+    let session = state.store.sessions.find((item) => item.remediationId === state.sessionId);
+    const active = session?.attempts.find((attempt) => attempt.id === session.activeAttemptId);
+    if (active?.status === 'in_progress') return state;
+    if (!session) {
+      const attempt = createRetestAttempt(1);
+      session = {
+        id: `retest-session-${state.sessionId}`,
+        remediationId: state.sessionId,
+        sourceChallengeId: state.sourceChallengeId,
+        activeAttemptId: attempt.id,
+        attempts: [attempt],
+      };
+    } else {
+      const attempt = createRetestAttempt(session.attempts.length + 1);
+      session = { ...session, activeAttemptId: attempt.id, attempts: [...session.attempts, attempt] };
+    }
+    return {
+      ...state,
+      error: '',
+      session,
+      store: {
+        ...state.store,
+        sessions: [
+          ...state.store.sessions.filter((item) => item.remediationId !== state.sessionId),
+          session,
+        ],
+      },
+    };
+  }
+  return updateRetestAttempt(state, (attempt) => {
+    if (action.type === 'SELECT_RECIPIENT') {
+      return { ...attempt, selectedRecipient: action.value, updatedAt: action.event.timestamp, events: [...attempt.events, action.event] };
+    }
+    if (action.type === 'SELECT_AMOUNT') {
+      return { ...attempt, selectedAmount: action.value, updatedAt: action.event.timestamp, events: [...attempt.events, action.event] };
+    }
+    if (action.type === 'OPEN_REVIEW') {
+      if (!attempt.selectedRecipient || attempt.selectedAmount === null) return attempt;
+      return {
+        ...attempt,
+        step: 'review',
+        reviewViewed: true,
+        recipientVerified: false,
+        amountVerified: false,
+        updatedAt: action.event.timestamp,
+        events: [...attempt.events, action.event],
+      };
+    }
+    if (action.type === 'VERIFY_RECIPIENT' || action.type === 'VERIFY_AMOUNT') {
+      return {
+        ...attempt,
+        [action.type === 'VERIFY_RECIPIENT' ? 'recipientVerified' : 'amountVerified']: action.checked,
+        updatedAt: action.event.timestamp,
+        events: [...attempt.events, action.event],
+      };
+    }
+    if (action.type === 'BACK_TO_REQUEST') {
+      return {
+        ...attempt,
+        step: 'request',
+        reviewViewed: false,
+        recipientVerified: false,
+        amountVerified: false,
+        updatedAt: action.event.timestamp,
+        events: [...attempt.events, action.event],
+      };
+    }
+    if (action.type === 'SUBMIT') {
+      if (attempt.step !== 'review' || !attempt.reviewViewed || !attempt.recipientVerified || !attempt.amountVerified) return attempt;
+      const correctRecipient = attempt.selectedRecipient === attempt.scenario.recipient;
+      const correctAmount = attempt.selectedAmount === attempt.scenario.amount;
+      const result = {
+        correct: correctRecipient && correctAmount,
+        correctRecipient,
+        correctAmount,
+        reviewViewed: attempt.reviewViewed,
+        recipientVerified: attempt.recipientVerified,
+        amountVerified: attempt.amountVerified,
+        selectedRecipient: attempt.selectedRecipient,
+        selectedAmount: attempt.selectedAmount,
+        expectedRecipient: attempt.scenario.recipient,
+        expectedAmount: attempt.scenario.amount,
+        incorrectRecipientChoices: attempt.events.filter((event) => event.type === 'recipient_selected' && event.details.correct === false).length,
+        incorrectAmountChoices: attempt.events.filter((event) => event.type === 'amount_selected' && event.details.correct === false).length,
+      };
+      return {
+        ...attempt,
+        status: 'submitted',
+        submittedAt: action.event.timestamp,
+        updatedAt: action.event.timestamp,
+        result,
+        events: [...attempt.events, { ...action.event, details: result }],
+      };
+    }
+    return attempt;
+  });
+}
+
+function useRetestState(sessionId, remediationSession) {
+  const [state, dispatch] = useReducer(
+    retestReducer,
+    { sessionId, remediationSession },
+    (args) => initializeRetestState(args.sessionId, args.remediationSession),
+  );
+  useEffect(() => {
+    if (!state.store.sessions.some((session) => session.remediationId === state.sessionId)) return;
+    try {
+      window.localStorage.setItem(RETEST_STORAGE_KEY, JSON.stringify(state.store));
+      if (state.error) dispatch({ type: 'STORAGE_ERROR', message: '' });
+    } catch {
+      dispatch({ type: 'STORAGE_ERROR', message: 'Fresh retest results could not be saved on this device.' });
+    }
+  }, [state.store, state.sessionId]);
+  return [state, dispatch];
+}
+
+function ChallengeFeedback({ result, attemptNumber, diagnosis, onRestart, onRemediate }) {
   return (
     <section className={`challenge-result ${result.correct ? 'result-correct' : 'result-review'}`} role="status" aria-live="polite">
       <div className="result-heading">
@@ -769,15 +1218,206 @@ function ChallengeFeedback({ result, attemptNumber, onRestart }) {
         ? 'You matched the person and amount to the request, then inspected and verified your check slip.'
         : `Next time, compare the name with the request, check the amount is ₹${result.expectedAmount}, and inspect both details on the check slip before submitting.`}</p>
       <div className="result-meta">Selections made: {result.selectionAttempts} · Incorrect recipient choices: {result.incorrectRecipientChoices} · Incorrect amount choices: {result.incorrectAmountChoices}</div>
+      {!result.correct && diagnosis && <button className="button challenge-restart" onClick={onRemediate}>Practise {diagnosis.label.toLowerCase()} <span aria-hidden="true">→</span></button>}
       <button className="button challenge-restart" onClick={onRestart}>Start a fresh attempt <span aria-hidden="true">↻</span></button>
     </section>
   );
 }
 
-function SurpriseChallenge({ navigate }) {
+function RemediationPractice({ skill, run, dispatch, error }) {
+  const needsVerification = skill === 'verification' || skill === 'incomplete';
+  const selectRecipient = (name) => dispatch({
+    type: 'SELECT_RECIPIENT',
+    value: name,
+    event: localEvent('recipient_selected', { selectedRecipient: name, correct: name === REMEDIATION_RECIPIENT }),
+  });
+  const selectAmount = (amount) => dispatch({
+    type: 'SELECT_AMOUNT',
+    value: amount,
+    event: localEvent('amount_selected', { selectedAmount: amount, correct: amount === REMEDIATION_AMOUNT }),
+  });
+  const verify = (field, checked) => dispatch({
+    type: field === 'recipient' ? 'VERIFY_RECIPIENT' : 'VERIFY_AMOUNT',
+    checked,
+    event: localEvent(`${field}_verification_checked`, { checked }),
+  });
+  const complete = () => dispatch({ type: 'COMPLETE', event: localEvent('mini_practice_completed', { skill }) });
+
+  return (
+    <section className="remediation-exercise" aria-labelledby="mini-practice-title">
+      <div className="remediation-exercise-heading">
+        <span className="eyebrow">TARGETED MINI-PRACTICE</span>
+        <h2 id="mini-practice-title">{skill === 'recipient' ? 'Match the person in the note.' : skill === 'amount' ? 'Match the requested amount.' : skill === 'verification' ? 'Check both details before continuing.' : 'Complete each step before you finish.'}</h2>
+        <p>Fictional task: prepare a studio materials contribution for Leena Bose, ₹520. Nothing will be sent.</p>
+      </div>
+
+      {(skill === 'recipient' || skill === 'incomplete') && (
+        <fieldset className="mini-practice-group">
+          <legend>Who does the note name?</legend>
+          {['Leena Bose', 'Tara Roy', 'Kabir Das'].map((name) => (
+            <button type="button" key={name} className={`mini-choice ${run.selectedRecipient === name ? 'chosen' : ''}`} aria-pressed={run.selectedRecipient === name} onClick={() => selectRecipient(name)} disabled={run.status === 'completed'}>
+              {name}<span aria-hidden="true">{run.selectedRecipient === name ? '✓' : '+'}</span>
+            </button>
+          ))}
+        </fieldset>
+      )}
+
+      {(skill === 'amount' || skill === 'incomplete') && (
+        <fieldset className="mini-practice-group">
+          <legend>Which amount matches the note?</legend>
+          <div className="mini-amount-options">
+            {[320, 520, 720].map((amount) => (
+              <button type="button" key={amount} className={`mini-choice ${run.selectedAmount === amount ? 'chosen' : ''}`} aria-pressed={run.selectedAmount === amount} onClick={() => selectAmount(amount)} disabled={run.status === 'completed'}>
+                ₹{amount}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {needsVerification && (
+        <div className="mini-review">
+          <strong>Review the practice details</strong>
+          <div><span>Recipient</span><b>Leena Bose</b></div>
+          <div><span>Amount</span><b>₹520</b></div>
+          <label><input type="checkbox" checked={run.recipientVerified} onChange={(event) => verify('recipient', event.target.checked)} disabled={run.status === 'completed'} /> I checked the recipient name.</label>
+          <label><input type="checkbox" checked={run.amountVerified} onChange={(event) => verify('amount', event.target.checked)} disabled={run.status === 'completed'} /> I checked the amount.</label>
+        </div>
+      )}
+
+      {error && <p className="practice-feedback error" role="alert">{error}</p>}
+      {run.status === 'completed' ? (
+        <div className="remediation-success" role="status">Targeted practice completed. This records the exercise, not skill mastery.</div>
+      ) : (
+        <button type="button" className="button button-primary remediation-complete" onClick={complete}>Complete this practice <span aria-hidden="true">→</span></button>
+      )}
+    </section>
+  );
+}
+
+function FreshRetest({ remediationSession, completedPractice, dispatch, state }) {
+  const retestSession = state.store.sessions.find((session) => session.remediationId === state.sessionId);
+  const attempt = retestSession?.attempts.find((item) => item.id === retestSession.activeAttemptId);
+  const submitted = attempt?.status === 'submitted';
+  const selectRecipient = (name) => dispatch({
+    type: 'SELECT_RECIPIENT',
+    value: name,
+    event: localEvent('recipient_selected', { selectedRecipient: name, correct: name === attempt.scenario.recipient }),
+  });
+  const selectAmount = (amount) => dispatch({
+    type: 'SELECT_AMOUNT',
+    value: amount,
+    event: localEvent('amount_selected', { selectedAmount: amount, correct: amount === attempt.scenario.amount }),
+  });
+  const verify = (field, checked) => dispatch({
+    type: field === 'recipient' ? 'VERIFY_RECIPIENT' : 'VERIFY_AMOUNT',
+    checked,
+    event: localEvent(`${field}_verification_checked`, { checked }),
+  });
+
+  return (
+    <section className="fresh-retest" aria-labelledby="fresh-retest-title">
+      <div className="remediation-exercise-heading">
+        <span className="eyebrow">FRESH INDEPENDENT RETEST · NO HINTS</span>
+        <h2 id="fresh-retest-title">Try the skill in a new scenario.</h2>
+        <p>This fictional studio notice uses different names and an amount from the earlier challenge. No hints are available.</p>
+      </div>
+      {!attempt ? (
+        <button type="button" className="button button-primary remediation-complete" disabled={!completedPractice} onClick={() => dispatch({ type: 'START_RETEST' })}>
+          {completedPractice ? 'Begin fresh challenge' : 'Complete targeted practice first'} <span aria-hidden="true">→</span>
+        </button>
+      ) : submitted ? (
+        <div className={`retest-result ${attempt.result.correct ? 'is-correct' : 'needs-review'}`} role="status" aria-live="polite">
+          <strong>{attempt.result.correct ? 'Retest checks matched.' : 'Retest needs another look.'}</strong>
+          <p>{attempt.result.correct
+            ? 'Your selected recipient and amount matched the notice, and both review checks were completed.'
+            : `The recorded selections ${attempt.result.correctRecipient ? 'matched the recipient' : `did not match ${attempt.result.expectedRecipient}`} and ${attempt.result.correctAmount ? 'matched the amount' : `did not match ₹${attempt.result.expectedAmount}`}.`}</p>
+          <small>Attempt {attempt.attemptNumber} · Incorrect names: {attempt.result.incorrectRecipientChoices} · Incorrect amounts: {attempt.result.incorrectAmountChoices}</small>
+          <button type="button" className="button challenge-restart" onClick={() => dispatch({ type: 'START_RETEST' })}>Try another fresh retest <span aria-hidden="true">↻</span></button>
+        </div>
+      ) : (
+        <div className="retest-board" aria-label="Fresh fictional studio notice">
+          <div className="retest-notice"><span>STUDIO NOTICE · FICTIONAL</span><strong>Prepare a materials contribution</strong><b>{attempt.scenario.recipient}</b><b>₹{attempt.scenario.amount}</b></div>
+          {attempt.step === 'request' ? (
+            <>
+              <fieldset className="mini-practice-group">
+                <legend>Select the person named in the notice</legend>
+                <div className="mini-choice-list">
+                  {attempt.scenario.contacts.map((name) => (
+                    <button type="button" key={name} className={`mini-choice ${attempt.selectedRecipient === name ? 'chosen' : ''}`} aria-pressed={attempt.selectedRecipient === name} onClick={() => selectRecipient(name)}>{name}<span aria-hidden="true">{attempt.selectedRecipient === name ? '✓' : '+'}</span></button>
+                  ))}
+                </div>
+              </fieldset>
+              <fieldset className="mini-practice-group">
+                <legend>Choose the requested amount</legend>
+                <div className="mini-amount-options">
+                  {[attempt.scenario.amount - 190, attempt.scenario.amount, attempt.scenario.amount + 210].map((amount) => (
+                    <button type="button" key={amount} className={`mini-choice ${attempt.selectedAmount === amount ? 'chosen' : ''}`} aria-pressed={attempt.selectedAmount === amount} onClick={() => selectAmount(amount)}>₹{amount}</button>
+                  ))}
+                </div>
+              </fieldset>
+              <button type="button" className="button button-primary remediation-complete" disabled={!attempt.selectedRecipient || attempt.selectedAmount === null} onClick={() => dispatch({ type: 'OPEN_REVIEW', event: localEvent('review_viewed') })}>Review details <span aria-hidden="true">→</span></button>
+            </>
+          ) : (
+            <div className="mini-review">
+              <strong>Check slip · Attempt {attempt.attemptNumber}</strong>
+              <div><span>Recipient</span><b>{attempt.selectedRecipient}</b></div>
+              <div><span>Amount</span><b>₹{attempt.selectedAmount}</b></div>
+              <label><input type="checkbox" checked={attempt.recipientVerified} onChange={(event) => verify('recipient', event.target.checked)} /> I checked the name against the notice.</label>
+              <label><input type="checkbox" checked={attempt.amountVerified} onChange={(event) => verify('amount', event.target.checked)} /> I checked the amount against the notice.</label>
+              <div className="retest-actions">
+                <button type="button" className="slip-back" onClick={() => dispatch({ type: 'BACK_TO_REQUEST', event: localEvent('returned_to_request') })}>Edit selections</button>
+                <button type="button" className="button button-primary remediation-complete" disabled={!attempt.recipientVerified || !attempt.amountVerified} onClick={() => dispatch({ type: 'SUBMIT', event: localEvent('answer_submitted') })}>Submit retest answer</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {state.error && <p className="practice-feedback storage-warning" role="status">{state.error}</p>}
+      {remediationSession && <span className="sr-only">Retest record linked to targeted practice.</span>}
+    </section>
+  );
+}
+
+function RemediationWorkspace({ remediationId, navigate }) {
+  const [state, dispatch] = useRemediationState(remediationId);
+  const session = state.store.sessions.find((item) => item.id === state.sessionId);
+  const run = session?.runs.find((item) => item.id === session.activeRunId);
+  const [retestState, retestDispatch] = useRetestState(remediationId, session || { sourceChallengeId: '' });
+  const completedPractice = run?.status === 'completed';
+  const canRestart = run?.status !== 'in_progress';
+
+  if (!session || !run) {
+    return <main className="page"><p className="practice-feedback storage-warning" role="alert">{state.error || 'Targeted practice is unavailable.'}</p><button className="button button-outline" onClick={() => navigate('passport')}>Return to Skill Passport</button></main>;
+  }
+
+  return (
+    <div className="page remediation-page">
+      <PageHeading eyebrow="TARGETED PRACTICE · STEP 1 OF 2" title="Practise the missed skill." description="This short fictional exercise focuses only on the issue recorded in your challenge.">
+        <div className="simulation-badge"><span className="status-dot" /> SIMULATION · NO REAL MONEY</div>
+      </PageHeading>
+      <div className="challenge-disclaimer"><span aria-hidden="true">◎</span><div><strong>{session.issueLabel}</strong><span>{session.issueSummary}</span></div><span className="disclaimer-stamp">BASED ON SAVED EVENTS</span></div>
+      {state.error && <p className="practice-feedback storage-warning" role="status">{state.error}</p>}
+      <RemediationPractice skill={session.skill} run={run} dispatch={dispatch} error={state.error} />
+      {canRestart && <button type="button" className="text-link remediation-restart" onClick={() => dispatch({ type: 'START_NEW_RUN', event: localEvent('practice_restarted') })}>Practise this skill again <span aria-hidden="true">↻</span></button>}
+      {completedPractice && (
+        <FreshRetest
+          remediationSession={session}
+          completedPractice={completedPractice}
+          dispatch={retestDispatch}
+          state={retestState}
+        />
+      )}
+      <div className="passport-footer"><button className="text-link" onClick={() => navigate('passport')}>Return to Skill Passport <span aria-hidden="true">→</span></button></div>
+    </div>
+  );
+}
+
+function SurpriseChallenge({ navigate, onRemediate }) {
   const [state, dispatch] = useChallengeSession();
   const attempt = state.store.attempts.find((item) => item.id === state.store.activeAttemptId);
   const submitted = attempt.status === 'submitted';
+  const diagnosis = getChallengeDiagnosis(attempt);
   const submit = () => {
     if (attempt.status !== 'in_progress' || attempt.step !== 'review' || !attempt.reviewViewed || !attempt.verificationCompleted) return;
     dispatch({ type: 'SUBMIT', event: challengeEvent('answer_submitted') });
@@ -880,7 +1520,13 @@ function SurpriseChallenge({ navigate }) {
               </div>
             </div>
           )}
-          {submitted && <ChallengeFeedback result={attempt.result} attemptNumber={attempt.attemptNumber} onRestart={startFresh} />}
+          {submitted && <ChallengeFeedback
+            result={attempt.result}
+            attemptNumber={attempt.attemptNumber}
+            diagnosis={diagnosis}
+            onRestart={startFresh}
+            onRemediate={() => onRemediate(attempt)}
+          />}
           {state.storageError && <p className="challenge-storage-warning" role="status">{state.storageError}</p>}
           <div className="board-foot"><span>AN EDUCATIONAL SIMULATION</span><span>Nothing will be sent.</span></div>
         </section>
@@ -890,9 +1536,11 @@ function SurpriseChallenge({ navigate }) {
   );
 }
 
-export function derivePassportData(practiceSession, challengeStore) {
+export function derivePassportData(practiceSession, challengeStore, remediationStore = null, retestStore = null) {
   const practice = isPracticeSession(practiceSession) ? practiceSession : null;
   const challenge = validChallengeStore(challengeStore) ? challengeStore : null;
+  const remediation = validRemediationStore(remediationStore) ? remediationStore : null;
+  const retests = validRetestStore(retestStore) ? retestStore : null;
   const practiceCounts = practice ? getPracticeEventCounts(practice) : null;
   const attempts = challenge?.attempts || [];
   const answeredAttempts = attempts.filter((attempt) => attempt.status === 'submitted' && attempt.result);
@@ -920,6 +1568,23 @@ export function derivePassportData(practiceSession, challengeStore) {
       event.type === 'amount_selected' && event.details.correct === false
     )).length
   ), 0) : null;
+  const latestEvidenceAttempt = [...attempts].reverse().find((attempt) => attempt.events.some((event) => [
+    'recipient_selected',
+    'amount_selected',
+    'review_requested',
+    'verification_completed',
+    'verification_unchecked',
+  ].includes(event.type)));
+  const issue = getChallengeDiagnosis(latestEvidenceAttempt);
+  const remediationSession = issue && remediation
+    ? remediation.sessions.find((session) => session.sourceChallengeId === latestEvidenceAttempt.id)
+    : null;
+  const activePracticeRun = remediationSession?.runs.find((run) => run.id === remediationSession.activeRunId) || null;
+  const retestSession = remediationSession && retests
+    ? retests.sessions.find((session) => session.remediationId === remediationSession.id)
+    : null;
+  const retestAttempts = retestSession?.attempts || [];
+  const latestRetestResult = [...retestAttempts].reverse().find((attempt) => attempt.status === 'submitted')?.result || null;
 
   return {
     practice: practice ? {
@@ -966,6 +1631,23 @@ export function derivePassportData(practiceSession, challengeStore) {
       latestResult: null,
       attempts: [],
     },
+    remediation: issue ? {
+      issue,
+      sourceAttempt: latestEvidenceAttempt,
+      exists: Boolean(remediationSession),
+      practiceCompleted: activePracticeRun?.status === 'completed',
+      practiceRuns: remediationSession?.runs || [],
+      practiceRunCount: remediationSession?.runs.length || 0,
+      latestPracticeOutcomes: activePracticeRun ? {
+        wrongRecipientChoices: activePracticeRun.events.filter((event) => event.type === 'recipient_selected' && event.details.correct === false).length,
+        wrongAmountChoices: activePracticeRun.events.filter((event) => event.type === 'amount_selected' && event.details.correct === false).length,
+        completed: activePracticeRun.status === 'completed',
+      } : null,
+      retestAttempts,
+      retestAttemptCount: retestAttempts.length,
+      retestCompletedSuccessfully: latestRetestResult?.correct === true,
+      latestRetestResult,
+    } : null,
   };
 }
 
@@ -1034,10 +1716,12 @@ function PassportMetric({ label, value, detail }) {
   );
 }
 
-function SkillPassport({ navigate }) {
+function SkillPassport({ navigate, onRemediate }) {
   const practiceSession = readStoredCompletion(PRACTICE_STORAGE_KEY);
   const challengeStore = readStoredCompletion(CHALLENGE_STORAGE_KEY);
-  const data = derivePassportData(practiceSession, challengeStore);
+  const remediationStore = readStoredCompletion(REMEDIATION_STORAGE_KEY);
+  const retestStore = readStoredCompletion(RETEST_STORAGE_KEY);
+  const data = derivePassportData(practiceSession, challengeStore, remediationStore, retestStore);
   const hasSession = data.practice.exists || data.challenge.exists;
   const recommendation = getPracticeRecommendation(data);
   const challengeOutcome = data.challenge.latestResult
@@ -1125,6 +1809,35 @@ function SkillPassport({ navigate }) {
           <div className="recommendation-safe">A safe space to learn. No real payments.</div>
         </aside>
       </div>
+      <section className="remediation-passport-section" aria-labelledby="remediation-passport-heading">
+        <div className="passport-section-head">
+          <div><div className="eyebrow">TARGETED PRACTICE LOOP</div><h2 id="remediation-passport-heading">Remediation & fresh retest</h2></div>
+          <span className="record-id">SIMULATION EVENTS ONLY</span>
+        </div>
+        {data.remediation ? (
+          <>
+            <div className="remediation-report-grid">
+              <PassportMetric label="Recorded issue" value={data.remediation.issue.label} detail={data.remediation.issue.skill === 'incomplete' ? 'Challenge left incomplete' : data.remediation.issue.summary} />
+              <PassportMetric label="Targeted practice" value={!data.remediation.exists ? 'Not started' : data.remediation.practiceCompleted ? 'Completed' : 'In progress'} detail={data.remediation.exists ? `${data.remediation.practiceRunCount} practice run${data.remediation.practiceRunCount === 1 ? '' : 's'} recorded` : 'No targeted-practice events yet'} />
+              <PassportMetric label="Fresh independent retest" value={!data.remediation.retestAttemptCount ? 'Not taken' : data.remediation.retestCompletedSuccessfully ? 'Succeeded' : 'Not yet successful'} detail={`${data.remediation.retestAttemptCount} retest attempt${data.remediation.retestAttemptCount === 1 ? '' : 's'} recorded`} />
+              <PassportMetric label="Latest retest incorrect choices" value={data.remediation.latestRetestResult
+                ? `${data.remediation.latestRetestResult.incorrectRecipientChoices} recipient · ${data.remediation.latestRetestResult.incorrectAmountChoices} amount`
+                : 'No submitted retest'} />
+            </div>
+            {data.remediation.latestRetestResult && (
+              <p className="remediation-outcome-note">
+                Latest retest: recipient {data.remediation.latestRetestResult.correctRecipient ? 'matched' : 'did not match'}; amount {data.remediation.latestRetestResult.correctAmount ? 'matched' : 'did not match'}; review and verification {data.remediation.latestRetestResult.reviewViewed && data.remediation.latestRetestResult.recipientVerified && data.remediation.latestRetestResult.amountVerified ? 'completed' : 'not completed'}.
+              </p>
+            )}
+            <p className="remediation-caveat">These results describe recorded interactions in the Tryora simulation only. Completing a mini-practice does not establish mastery or certify real-world financial competence.</p>
+            <button type="button" className="button button-outline" onClick={() => onRemediate(data.remediation.sourceAttempt)}>
+              {data.remediation.practiceCompleted ? 'Continue to fresh retest' : 'Practise the recorded skill'} <span aria-hidden="true">→</span>
+            </button>
+          </>
+        ) : (
+          <p className="remediation-caveat">No missed skill is identified yet. A targeted practice recommendation appears only when saved challenge events show an incorrect or incomplete outcome.</p>
+        )}
+      </section>
       <div className="passport-footer"><ProgressSteps current={3} completedStages={[
         ...(data.practice.completed ? [1] : []),
         ...(data.challenge.successful ? [2] : []),
@@ -1135,13 +1848,24 @@ function SkillPassport({ navigate }) {
 
 export default function App() {
   const [page, setPage] = useState('home');
+  const [remediationId, setRemediationId] = useState('');
   const navigate = (nextPage) => setPage(nextPage);
+  const startRemediation = (attempt) => {
+    const id = ensureRemediationSession(attempt);
+    if (!id) {
+      window.alert('Targeted practice could not be saved in this browser. Check storage permissions and try again.');
+      return;
+    }
+    setRemediationId(id);
+    navigate('remediation');
+  };
   return (
     <AppLayout page={page} navigate={navigate}>
       {page === 'home' && <Dashboard navigate={navigate} />}
       {page === 'practice' && <PracticeWorkspace navigate={navigate} />}
-      {page === 'challenge' && <SurpriseChallenge navigate={navigate} />}
-      {page === 'passport' && <SkillPassport navigate={navigate} />}
+      {page === 'challenge' && <SurpriseChallenge navigate={navigate} onRemediate={startRemediation} />}
+      {page === 'passport' && <SkillPassport navigate={navigate} onRemediate={startRemediation} />}
+      {page === 'remediation' && <RemediationWorkspace key={remediationId} remediationId={remediationId} navigate={navigate} />}
     </AppLayout>
   );
 }

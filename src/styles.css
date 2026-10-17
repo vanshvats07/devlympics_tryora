@@ -716,6 +716,153 @@ button:disabled { cursor: not-allowed !important; opacity: .48; }
   .result-checks strong { font-size: 8px; }
 }
 
+.remediation-exercise, .fresh-retest, .remediation-passport-section {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid #eae9e7;
+  border-radius: 8px;
+  background: #fff;
+}
+.remediation-exercise-heading h2 {
+  margin: 6px 0;
+  color: #34354f;
+  font: 700 17px/1.35 var(--serif);
+}
+.remediation-exercise-heading p, .remediation-caveat, .remediation-outcome-note {
+  color: #5d5e70;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.mini-practice-group {
+  min-width: 0;
+  margin: 14px 0;
+  padding: 0;
+  border: 0;
+}
+.mini-practice-group legend {
+  margin-bottom: 8px;
+  color: #414259;
+  font-size: 11px;
+  font-weight: 700;
+}
+.mini-choice-list, .mini-amount-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mini-choice {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  border: 1px solid #e5e3eb;
+  border-radius: 6px;
+  padding: 0 12px;
+  color: #45465f;
+  background: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.mini-choice:hover:not(:disabled), .mini-choice.chosen {
+  border-color: #aaa2df;
+  background: #f7f5fc;
+}
+.mini-choice:disabled { cursor: default; }
+.mini-choice.chosen { color: #5146a8; }
+.mini-review {
+  display: grid;
+  gap: 10px;
+  margin-top: 15px;
+  padding: 14px;
+  border: 1px solid #e8e6ee;
+  border-radius: 7px;
+  background: #fbfafe;
+}
+.mini-review > strong { color: #3e4058; font-size: 12px; }
+.mini-review > div:not(.retest-actions) {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #5d5e70;
+  font-size: 10px;
+}
+.mini-review label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #4f5063;
+  font-size: 10px;
+}
+.mini-review input { accent-color: #6255bd; }
+.remediation-complete { margin-top: 8px; }
+.remediation-success, .retest-result {
+  margin-top: 13px;
+  padding: 13px;
+  border: 1px solid #dfe9e1;
+  border-radius: 6px;
+  color: #435d4d;
+  background: #f4f8f4;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.remediation-restart { margin-top: 12px; }
+.fresh-retest { background: #faf9f6; }
+.retest-board {
+  margin-top: 15px;
+  padding: 15px;
+  border: 1px solid #e6e2d8;
+  border-radius: 7px;
+  background: #fff;
+}
+.retest-notice {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border-left: 3px solid #b9986c;
+  background: #f8f4eb;
+}
+.retest-notice span { color: #625a4b; font-size: 8px; font-weight: 700; letter-spacing: .8px; }
+.retest-notice strong { color: #3f4054; font: 700 14px var(--serif); }
+.retest-notice b { color: #48495d; font-size: 11px; }
+.retest-result > strong { font: 700 14px var(--serif); }
+.retest-result p { margin: 7px 0; }
+.retest-result small { color: #515e53; font-size: 9px; }
+.retest-result.needs-review { border-color: #eee3d4; color: #69573e; background: #fcf8f1; }
+.retest-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 6px; }
+.remediation-report-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 13px;
+}
+.remediation-report-grid .passport-metric { min-height: 72px; }
+.remediation-passport-section > .button { margin-top: 4px; }
+.remediation-caveat { max-width: 900px; margin: 12px 0; }
+.remediation-outcome-note { padding: 9px 11px; border-radius: 5px; background: #f8f7f3; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+@media (max-width: 800px) {
+  .remediation-report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .remediation-exercise, .fresh-retest, .remediation-passport-section { padding: 13px; }
+  .mini-choice { min-height: 42px; }
+  .mini-choice-list { display: grid; }
+  .retest-board { padding: 10px; }
+  .retest-actions { align-items: stretch; flex-direction: column; }
+  .remediation-report-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .remediation-report-grid .passport-metric { padding: 8px; }
+}
+
 .topbar-note, .fictional-caption, .journey-card > p, .section-aside,
 .not-started-pill, .progress-step, .progress-card-footer, .example-caption,
 .page-footer, .page-heading p {
