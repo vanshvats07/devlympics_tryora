@@ -550,18 +550,7 @@ button:disabled { cursor: not-allowed !important; opacity: .48; }
   .passport-empty { flex-wrap: wrap; }
   .passport-empty > div { flex-basis: calc(100% - 50px); }
   .passport-empty .button { margin-left: 47px; }
-  .transfer-challenge-layout { grid-template-columns: minmax(185px, .75fr) minmax(300px, 1.25fr); gap: 9px;     .passport-metric-grid { gap: 6px; margin-top: 10px; }
-    .passport-metric { min-height: 57px; padding: 7px; }
-    .passport-metric > span { font-size: 6px; }
-    .passport-metric > strong { font-size: 8px; }
-    .outcome-comparison { grid-template-columns: 1fr; gap: 6px; }
-    .outcome-arrow { justify-self: center; transform: rotate(90deg); }
-    .passport-empty { gap: 8px; padding: 12px; }
-    .passport-empty > div { flex-basis: calc(100% - 44px); }
-    .passport-empty .button { margin-left: 42px; }
-    .passport-caveat .placeholder-badge { display: none; }
-    .passport-recommendation { min-height: 280px; }
-  }
+  .transfer-challenge-layout { grid-template-columns: minmax(185px, .75fr) minmax(300px, 1.25fr); gap: 9px; }
   .request-brief { min-height: 500px; padding: 12px; }
   .request-board { min-height: 500px; padding: 13px 11px 10px; }
   .guest-options { gap: 5px; }
@@ -578,7 +567,7 @@ button:disabled { cursor: not-allowed !important; opacity: .48; }
   .topbar { height: 53px; padding: 0 13px; }
   .mobile-brand { display: flex; align-items: center; gap: 6px; color: var(--ink); font: 800 15px var(--serif); }
   .mobile-brand .brand-mark { width: 23px; height: 23px; border-radius: 7px; font-size: 16px; }
-  .topbar-note { gap: 5px; font-size: 6px; letter-spacing: .35px; }
+  .topbar-note { gap: 5px; font-size: 8px; letter-spacing: .2px; }
   .topbar-note .status-dot { width: 5px; height: 5px; box-shadow: 0 0 0 2px #eaf2ed; }
   .topbar-help { display: none; }
   .page { padding: 22px 13px 20px; }
@@ -700,6 +689,66 @@ button:disabled { cursor: not-allowed !important; opacity: .48; }
   .result-checks > div { padding: 6px; }
   .result-checks strong { font-size: 6px; }
 }
+
+@media (max-width: 800px) {
+  .passport-metric-grid { gap: 6px; margin-top: 10px; }
+  .passport-metric { min-height: 57px; padding: 7px; }
+  .outcome-comparison { grid-template-columns: 1fr; gap: 6px; }
+  .outcome-arrow { justify-self: center; transform: rotate(90deg); }
+  .passport-empty { gap: 8px; padding: 12px; }
+  .passport-empty > div { flex-basis: calc(100% - 44px); }
+  .passport-empty .button { margin-left: 42px; }
+  .passport-caveat .placeholder-badge { display: none; }
+  .passport-recommendation { min-height: 280px; }
+}
+
+@media (max-width: 600px) {
+  .passport-metric > span { color: #5d5e6c; font-size: 9px; }
+  .passport-metric > strong { font-size: 10px; }
+  .passport-metric > small { color: #5d5e6c; font-size: 8px; }
+  .outcome-kicker { color: #5d5e6c; font-size: 8px; }
+  .outcome-column strong { font-size: 10px; }
+  .outcome-column small { color: #5d5e6c; font-size: 9px; }
+  .passport-intro strong { font-size: 11px; }
+  .passport-intro p { color: #55566a; font-size: 9px; }
+  .challenge-no-hints > div span, .no-hints-tag { font-size: 8px; }
+  .guest-description small, .privacy-note, .result-checks span { color: #555b55; font-size: 8px; }
+  .result-checks strong { font-size: 8px; }
+}
+
+.topbar-note, .fictional-caption, .journey-card > p, .section-aside,
+.not-started-pill, .progress-step, .progress-card-footer, .example-caption,
+.page-footer, .page-heading p {
+  color: #5d5e70;
+}
+.practice-task-banner > div:nth-child(2) span, .practice-only {
+  color: #5f5b75;
+  font-size: 8px;
+}
+.phone-balance > span, .phone-balance small, .phone-subtitle, .contact-name small,
+.phone-task p, .phone-footer, .phone-caption, .phone-step-label, .amount-label,
+.amount-note, .amount-to, .review-prompt, .verification-row span, .verify-note {
+  color: #5c5d70;
+  font-size: 8px;
+}
+.phone-footer { font-size: 7px; }
+.contact-name small { font-size: 7px; }
+.passport-stamp, .passport-intro p, .passport-metric > span, .passport-metric > small,
+.outcome-kicker, .outcome-column small, .passport-unavailable, .record-id,
+.recommendation-card > p, .recommendation-next > span, .recommendation-next small,
+.passport-empty p {
+  color: #5c5d6f;
+  font-size: 8px;
+}
+.passport-metric > span, .outcome-kicker { font-size: 9px; }
+.passport-intro p, .recommendation-card > p, .outcome-column small { font-size: 9px; }
+.challenge-disclaimer > div > span, .brief-copy, .brief-instruction,
+.guest-description small, .privacy-note, .result-checks span,
+.scenario-copy p, .scenario-reminder p {
+  color: #5b5c55;
+  font-size: 8px;
+}
+.request-details > span, .board-kicker { color: #5b5c55; font-size: 8px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }

@@ -21,6 +21,7 @@ function AppLayout({ page, navigate, children }) {
             <button
               className={`nav-link ${page === item.id ? 'active' : ''}`}
               key={item.id}
+              aria-label={item.label}
               onClick={() => navigate(item.id)}
               aria-current={page === item.id ? 'page' : undefined}
             >
@@ -101,7 +102,7 @@ function Dashboard({ navigate }) {
   const challengeStore = readStoredCompletion(CHALLENGE_STORAGE_KEY);
   const practiceComplete = isPracticeSession(practiceSession) && practiceSession.completed === true;
   const challengeComplete = validChallengeStore(challengeStore)
-    && challengeStore.attempts?.some((attempt) => attempt.status === 'submitted');
+    && challengeStore.attempts?.some((attempt) => attempt.status === 'submitted' && attempt.result.correct === true);
   const completedStages = [
     ...(practiceComplete ? [1] : []),
     ...(challengeComplete ? [2] : []),
@@ -884,7 +885,7 @@ function SurpriseChallenge({ navigate }) {
           <div className="board-foot"><span>AN EDUCATIONAL SIMULATION</span><span>Nothing will be sent.</span></div>
         </section>
       </div>
-      <div className="challenge-footer"><ProgressSteps current={2} completedStages={attempt.status === 'submitted' ? [2] : []} /><button className="button button-outline" onClick={() => navigate('passport')}>View Skill Passport <span aria-hidden="true">→</span></button></div>
+      <div className="challenge-footer"><ProgressSteps current={2} completedStages={attempt.result?.correct === true ? [2] : []} /><button className="button button-outline" onClick={() => navigate('passport')}>View Skill Passport <span aria-hidden="true">→</span></button></div>
     </div>
   );
 }
@@ -1126,7 +1127,7 @@ function SkillPassport({ navigate }) {
       </div>
       <div className="passport-footer"><ProgressSteps current={3} completedStages={[
         ...(data.practice.completed ? [1] : []),
-        ...(data.challenge.submittedAttempts > 0 ? [2] : []),
+        ...(data.challenge.successful ? [2] : []),
       ]} /><button className="text-link" onClick={() => navigate('home')}>Back to overview <span aria-hidden="true">→</span></button></div>
     </div>
   );
