@@ -363,6 +363,34 @@ button:disabled { cursor: not-allowed !important; opacity: .48; }
 .recommendation-safe { margin-top: 10px; color: #99988e; text-align: center; font-size: 7px; }
 .passport-footer { margin-top: 16px; }
 
+/* Session-derived Skill Passport */
+.passport-caveat { margin-bottom: 13px; }
+.passport-caveat .placeholder-badge { align-self: center; }
+.passport-empty { display: flex; align-items: center; gap: 13px; margin-bottom: 13px; padding: 16px; border: 1px dashed #dcd9e9; border-radius: 8px; background: #fbfafe; }
+.empty-symbol { flex: 0 0 34px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: #675bbd; background: #eeecf8; font-size: 16px; }
+.passport-empty > div { flex: 1; }
+.passport-empty .eyebrow { color: #7770a9; }
+.passport-empty h2 { margin: 4px 0; color: #3e4058; font: 700 13px var(--serif); }
+.passport-empty p { margin: 0; color: #818292; font-size: 8px; line-height: 1.55; }
+.passport-empty .button { flex: 0 0 auto; }
+.passport-metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.passport-metric { min-width: 0; min-height: 64px; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 9px; border: 1px solid #eeedeb; border-radius: 6px; background: #fdfdfc; }
+.passport-metric > span { color: #8b8c99; font-size: 7px; line-height: 1.35; }
+.passport-metric > strong { overflow-wrap: anywhere; color: #47485f; font: 700 10px/1.35 var(--serif); }
+.passport-metric > small { color: #9999a4; font-size: 6px; }
+.passport-comparison { margin-top: 15px; }
+.passport-comparison > p { margin: 8px 0 11px; }
+.outcome-comparison { display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; gap: 10px; }
+.outcome-column { min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid #edecf0; border-radius: 5px; background: #fff; }
+.outcome-kicker { color: #8b8b99; font-size: 6px; font-weight: 700; letter-spacing: .6px; }
+.outcome-column strong { color: #4a4b62; font: 700 9px/1.4 var(--serif); }
+.outcome-column small { color: #898a97; font-size: 7px; line-height: 1.5; }
+.outcome-arrow { align-self: center; color: #a09db6; font-size: 13px; }
+.passport-unavailable { margin: 10px 0 0; color: #9696a1; font-size: 7px; line-height: 1.5; }
+.passport-recommendation { min-height: 100%; }
+.reset-demo-button { width: 100%; min-height: 36px; margin-top: 8px; border: 1px solid #e5d8d6; color: #925b54; background: #fff; font-size: 8px; }
+.reset-demo-button:hover { background: #fcf5f3; }
+
 /* Independent request-board challenge */
 .transfer-challenge-page .page-heading { margin-bottom: 18px; }
 .challenge-disclaimer { min-height: 53px; display: flex; align-items: center; gap: 10px; padding: 9px 14px; border: 1px solid #e7e6eb; border-radius: 7px; background: #fff; }
@@ -487,6 +515,7 @@ button:disabled { cursor: not-allowed !important; opacity: .48; }
   .transfer-challenge-layout { grid-template-columns: minmax(200px, .68fr) minmax(360px, 1.32fr); gap: 11px; }
   .request-brief { padding: 15px; }
   .request-board { padding-right: 15px; padding-left: 15px; }
+  .passport-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 800px) {
   .sidebar { width: 67px; align-items: center; padding: 19px 8px 13px; }
@@ -518,7 +547,21 @@ button:disabled { cursor: not-allowed !important; opacity: .48; }
   .challenge-interface { padding: 13px; }
   .passport-grid { grid-template-columns: 1fr; }
   .recommendation-card { min-height: 290px; }
-  .transfer-challenge-layout { grid-template-columns: minmax(185px, .75fr) minmax(300px, 1.25fr); gap: 9px; }
+  .passport-empty { flex-wrap: wrap; }
+  .passport-empty > div { flex-basis: calc(100% - 50px); }
+  .passport-empty .button { margin-left: 47px; }
+  .transfer-challenge-layout { grid-template-columns: minmax(185px, .75fr) minmax(300px, 1.25fr); gap: 9px;     .passport-metric-grid { gap: 6px; margin-top: 10px; }
+    .passport-metric { min-height: 57px; padding: 7px; }
+    .passport-metric > span { font-size: 6px; }
+    .passport-metric > strong { font-size: 8px; }
+    .outcome-comparison { grid-template-columns: 1fr; gap: 6px; }
+    .outcome-arrow { justify-self: center; transform: rotate(90deg); }
+    .passport-empty { gap: 8px; padding: 12px; }
+    .passport-empty > div { flex-basis: calc(100% - 44px); }
+    .passport-empty .button { margin-left: 42px; }
+    .passport-caveat .placeholder-badge { display: none; }
+    .passport-recommendation { min-height: 280px; }
+  }
   .request-brief { min-height: 500px; padding: 12px; }
   .request-board { min-height: 500px; padding: 13px 11px 10px; }
   .guest-options { gap: 5px; }

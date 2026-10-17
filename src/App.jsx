@@ -74,7 +74,7 @@ function ProgressSteps({ current = 0, completedStages = [] }) {
   return (
     <div className="progress-steps" aria-label="Learning journey">
       {stages.map((stage, index) => {
-        const complete = completedStages.includes(index + 1) || current > index + 1;
+        const complete = completedStages.includes(index + 1);
         return (
           <div className="progress-step" key={stage}>
             <StageMark number={`0${index + 1}`} active={current === index + 1 && !complete} complete={complete} />
@@ -598,6 +598,11 @@ function validChallengeStore(value) {
       && ['request', 'review'].includes(attempt.step)
       && ['in_progress', 'submitted', 'abandoned'].includes(attempt.status)
       && Array.isArray(attempt.events)
+      && attempt.events.every((event) => typeof event?.id === 'string'
+        && typeof event.type === 'string'
+        && typeof event.timestamp === 'string'
+        && event.details !== null
+        && typeof event.details === 'object')
       && (attempt.status !== 'submitted' || (
         attempt.step === 'review'
         && attempt.reviewViewed
@@ -884,37 +889,245 @@ function SurpriseChallenge({ navigate }) {
   );
 }
 
+export function derivePassportData(practiceSession, challengeStore) {
+  const practice = isPracticeSession(practiceSession) ? practiceSession : null;
+  const challenge = validChallengeStore(challengeStore) ? challengeStore : null;
+  const practiceCounts = practice ? getPracticeEventCounts(practice) : null;
+  const attempts = challenge?.attempts || [];
+  const answeredAttempts = attempts.filter((attempt) => attempt.status === 'submitted' && attempt.result);
+  const interactedAttempts = attempts.filter((attempt) => (
+    attempt.events.some((event) => [
+      'recipient_selected',
+      'amount_selected',
+      'review_requested',
+      'verification_completed',
+      'answer_submitted',
+    ].includes(event.type))
+  ));
+  const challengeEventCount = (types) => attempts.reduce((count, attempt) => (
+    count + attempt.events.filter((event) => types.includes(event.type)).length
+  ), 0);
+  const latestResult = answeredAttempts.at(-1)?.result || null;
+  const successfulChallenge = answeredAttempts.some((attempt) => attempt.result.correct === true);
+  const incorrectRecipientChoices = challenge ? attempts.reduce((count, attempt) => (
+    count + attempt.events.filter((event) => (
+      event.type === 'recipient_selected' && event.details.correct === false
+    )).length
+  ), 0) : null;
+  const incorrectAmountChoices = challenge ? attempts.reduce((count, attempt) => (
+    count + attempt.events.filter((event) => (
+      event.type === 'amount_selected' && event.details.correct === false
+    )).length
+  ), 0) : null;
+
+  return {
+    practice: practice ? {
+      exists: true,
+      completed: practice.completed,
+      hintsRequested: practiceCounts.hintRequests,
+      wrongRecipientSelections: practiceCounts.wrongRecipientSelections,
+      incorrectAmountAttempts: practiceCounts.incorrectAmountAttempts,
+      verificationCompleted: practice.events.some((event) => event.type === 'verification_viewed'),
+      selectedRecipient: practice.selectedRecipient,
+      amount: practice.amount,
+      completedAt: practice.completedAt,
+    } : {
+      exists: false,
+      completed: false,
+      hintsRequested: null,
+      wrongRecipientSelections: null,
+      incorrectAmountAttempts: null,
+      verificationCompleted: null,
+      selectedRecipient: null,
+      amount: null,
+      completedAt: null,
+    },
+    challenge: challenge ? {
+      exists: true,
+      attemptsStarted: interactedAttempts.length,
+      submittedAttempts: answeredAttempts.length,
+      successful: successfulChallenge,
+      incorrectRecipientChoices,
+      incorrectAmountChoices,
+      reviewViewed: challengeEventCount(['review_requested']) > 0,
+      verificationCompleted: challengeEventCount(['verification_completed']) > 0,
+      latestResult,
+      attempts: challenge.attempts,
+    } : {
+      exists: false,
+      attemptsStarted: null,
+      submittedAttempts: null,
+      successful: false,
+      incorrectRecipientChoices: null,
+      incorrectAmountChoices: null,
+      reviewViewed: null,
+      verificationCompleted: null,
+      latestResult: null,
+      attempts: [],
+    },
+  };
+}
+
+function displayedMetric(value, suffix = '') {
+  return value === null ? 'No session data' : `${value}${suffix}`;
+}
+
+function getPracticeRecommendation(data) {
+  if (!data.practice.exists) {
+    return {
+      title: 'Start with a guided practice.',
+      body: 'There is no guided session saved yet. Try the fictional practice flow to create a starting record.',
+    };
+  }
+  if (!data.practice.completed) {
+    return {
+      title: 'Finish the guided practice steps.',
+      body: 'Your saved practice is still in progress. Continue it and inspect the recipient and amount before confirming.',
+    };
+  }
+  if (!data.practice.verificationCompleted) {
+    return {
+      title: 'Make time for the review step.',
+      body: 'The saved practice record has no review event. Revisit the confirmation details before completing the flow.',
+    };
+  }
+  if (data.practice.wrongRecipientSelections > 0) {
+    return {
+      title: 'Pause on the recipient name.',
+      body: `There ${data.practice.wrongRecipientSelections === 1 ? 'was' : 'were'} ${data.practice.wrongRecipientSelections} wrong recipient selection${data.practice.wrongRecipientSelections === 1 ? '' : 's'} in guided practice. Compare the selected name with the task before continuing.`,
+    };
+  }
+  if (data.practice.incorrectAmountAttempts > 0) {
+    return {
+      title: 'Recheck the amount against the task.',
+      body: `The guided session recorded ${data.practice.incorrectAmountAttempts} incorrect amount attempt${data.practice.incorrectAmountAttempts === 1 ? '' : 's'}. Read the requested amount, then compare it with the review screen.`,
+    };
+  }
+  if (!data.challenge.successful) {
+    return {
+      title: 'Try the independent challenge.',
+      body: data.challenge.exists
+        ? 'No submitted challenge answer has matched the request yet. Take another look at the name, amount and check slip.'
+        : 'The independent challenge has no saved attempt yet. Try the changed interface without hints when you are ready.',
+    };
+  }
+  if (data.practice.hintsRequested > 0) {
+    return {
+      title: 'Try a practice round at your own pace.',
+      body: `Hints were requested ${data.practice.hintsRequested} time${data.practice.hintsRequested === 1 ? '' : 's'} in the saved practice session. You can revisit it and use guidance whenever useful.`,
+    };
+  }
+  return {
+    title: 'Revisit either task whenever useful.',
+    body: 'Your saved records show both guided completion and a successful independent answer. Keep practising only if it is useful to you.',
+  };
+}
+
+function PassportMetric({ label, value, detail }) {
+  return (
+    <div className="passport-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {detail && <small>{detail}</small>}
+    </div>
+  );
+}
+
 function SkillPassport({ navigate }) {
+  const practiceSession = readStoredCompletion(PRACTICE_STORAGE_KEY);
+  const challengeStore = readStoredCompletion(CHALLENGE_STORAGE_KEY);
+  const data = derivePassportData(practiceSession, challengeStore);
+  const hasSession = data.practice.exists || data.challenge.exists;
+  const recommendation = getPracticeRecommendation(data);
+  const challengeOutcome = data.challenge.latestResult
+    ? (data.challenge.latestResult.correct ? 'Matched request' : 'Needs review')
+    : data.challenge.exists ? 'No answer submitted' : 'No session data';
+  const practiseAgain = () => {
+    try {
+      window.localStorage.removeItem(PRACTICE_STORAGE_KEY);
+      navigate('practice');
+    } catch {
+      window.alert('The previous practice session could not be cleared in this browser. Try Reset My Demo Data or check storage permissions.');
+    }
+  };
+  const resetDemoData = () => {
+    try {
+      const tryoraKeys = Object.keys(window.localStorage).filter((key) => key.startsWith('tryora.'));
+      tryoraKeys.forEach((key) => window.localStorage.removeItem(key));
+      navigate('home');
+    } catch {
+      window.alert('Tryora demo data could not be cleared in this browser. Check browser storage permissions and try again.');
+    }
+  };
   return (
     <div className="page passport-page">
-      <PageHeading eyebrow="STEP 03 · YOUR SKILL PASSPORT" title="A snapshot, not a score." description="A thoughtful record of your learning—built on what you actually do.">
-        <div className="passport-stamp"><span className="stamp-mark">t.</span><span>TRYORA<br />LEARNING RECORD</span></div>
+      <PageHeading eyebrow="STEP 03 · YOUR SKILL PASSPORT" title="A record of what you tried." description="A clear snapshot of the interactions saved in this browser.">
+        <div className="passport-stamp"><span className="stamp-mark">t.</span><span>TRYORA<br />DEMO RECORD</span></div>
       </PageHeading>
-      <div className="passport-intro"><div className="intro-icon" aria-hidden="true">✳</div><div><strong>Your passport is getting ready.</strong><p>Real performance tracking hasn’t been added yet. We won’t make up scores or progress.</p></div><span className="placeholder-badge">PREVIEW</span></div>
+      <div className="passport-intro passport-caveat"><div className="intro-icon" aria-hidden="true">◎</div><div><strong>This describes your performance in this demo only.</strong><p>It is not a measure of intelligence, a certified skill, or proof of ability in a real-world service.</p></div><span className="placeholder-badge">{hasSession ? 'SESSION DATA' : 'EMPTY'}</span></div>
+
+      {!hasSession && (
+        <div className="passport-empty">
+          <span className="empty-symbol" aria-hidden="true">↗</span>
+          <div><span className="eyebrow">NOTHING SAVED YET</span><h2>Your demo record starts when you do.</h2><p>Try a guided task or independent challenge. This report will show only the interactions saved in this browser.</p></div>
+          <button className="button button-primary" onClick={() => navigate('practice')}>Start Safe Practice <span aria-hidden="true">→</span></button>
+        </div>
+      )}
+
       <div className="passport-grid">
         <section className="passport-main">
-          <div className="passport-section-head"><div><div className="eyebrow">YOUR PRACTICE RECORD</div><h2>What we’ll capture</h2></div><span className="record-id">TR · PREVIEW</span></div>
-          <div className="record-list">
-            <div className="record-row"><span className="record-symbol purple">01</span><span className="record-copy"><strong>Guided Practice</strong><small>Try a task with support</small></span><span className="not-measured">Not measured yet</span><span className="record-arrow">↗</span></div>
-            <div className="record-row"><span className="record-symbol blue">02</span><span className="record-copy"><strong>Independent Challenge</strong><small>Try again in a changed interface</small></span><span className="not-measured">Not measured yet</span><span className="record-arrow">↗</span></div>
-            <div className="record-row"><span className="record-symbol peach">03</span><span className="record-copy"><strong>Hints &amp; mistakes</strong><small>Signals from your practice</small></span><span className="not-measured">Not measured yet</span><span className="record-arrow">↗</span></div>
+          <div className="passport-section-head"><div><div className="eyebrow">RECORDED INTERACTIONS</div><h2>Your session details</h2></div><span className="record-id">LOCAL DEMO DATA</span></div>
+          <div className="passport-metric-grid">
+            <PassportMetric label="Guided Practice" value={data.practice.exists ? (data.practice.completed ? 'Completed' : 'In progress') : 'No session data'} />
+            <PassportMetric label="Hints requested" value={displayedMetric(data.practice.hintsRequested)} />
+            <PassportMetric label="Wrong recipient selections" value={displayedMetric(data.practice.wrongRecipientSelections)} />
+            <PassportMetric label="Incorrect amount attempts" value={displayedMetric(data.practice.incorrectAmountAttempts)} />
+            <PassportMetric label="Practice review viewed" value={data.practice.verificationCompleted === null ? 'No session data' : data.practice.verificationCompleted ? 'Yes' : 'Not recorded'} />
+            <PassportMetric label="Independent challenge" value={data.challenge.successful ? 'Completed successfully' : data.challenge.exists ? 'Not completed successfully' : 'No session data'} />
+            <PassportMetric label="Challenge attempts started" value={displayedMetric(data.challenge.attemptsStarted)} detail={data.challenge.exists ? `${data.challenge.submittedAttempts} submitted` : undefined} />
+            <PassportMetric label="Incorrect challenge recipient choices" value={displayedMetric(data.challenge.incorrectRecipientChoices)} />
+            <PassportMetric label="Incorrect challenge amount choices" value={displayedMetric(data.challenge.incorrectAmountChoices)} />
+            <PassportMetric label="Challenge review viewed" value={data.challenge.reviewViewed === null ? 'No session data' : data.challenge.reviewViewed ? 'Yes' : 'Not recorded'} />
+            <PassportMetric label="Challenge verification completed" value={data.challenge.verificationCompleted === null ? 'No session data' : data.challenge.verificationCompleted ? 'Yes' : 'Not recorded'} />
+            <PassportMetric label="Latest challenge answer" value={challengeOutcome} />
           </div>
-          <div className="comparison-area">
-            <div className="comparison-heading"><div><span className="eyebrow">SIDE BY SIDE</span><h3>Guided → independent</h3></div><span className="placeholder-badge">PLACEHOLDER</span></div>
-            <p>When performance tracking is ready, this space will show how you approached each step. No scores are available in this preview.</p>
-            <div className="comparison-bars"><div><span>GUIDED PRACTICE</span><i /><small>Not measured</small></div><span className="compare-arrow">→</span><div><span>INDEPENDENT</span><i /><small>Not measured</small></div></div>
+          <div className="comparison-area passport-comparison">
+            <div className="comparison-heading"><div><span className="eyebrow">SIDE BY SIDE</span><h3>Guided → independent</h3></div><span className="placeholder-badge">OBSERVED OUTCOMES</span></div>
+            <p>These are recorded task outcomes, not scores or a comparison of personal ability.</p>
+            <div className="outcome-comparison">
+              <div className="outcome-column">
+                <span className="outcome-kicker">GUIDED PRACTICE</span>
+                <strong>{data.practice.exists ? (data.practice.completed ? 'Task completed' : 'Task not completed') : 'No practice record'}</strong>
+                <small>{data.practice.exists
+                  ? `${data.practice.verificationCompleted ? 'Review step recorded' : 'Review step not recorded'} · ${data.practice.hintsRequested} hint${data.practice.hintsRequested === 1 ? '' : 's'}`
+                  : 'No guided session is saved.'}</small>
+              </div>
+              <span className="outcome-arrow" aria-hidden="true">→</span>
+              <div className="outcome-column">
+                <span className="outcome-kicker">INDEPENDENT CHALLENGE</span>
+                <strong>{challengeOutcome}</strong>
+                <small>{data.challenge.exists
+                  ? `${data.challenge.attemptsStarted} attempt${data.challenge.attemptsStarted === 1 ? '' : 's'} started · ${data.challenge.incorrectRecipientChoices} wrong recipient and ${data.challenge.incorrectAmountChoices} wrong amount choice${data.challenge.incorrectAmountChoices === 1 ? '' : 's'}`
+                  : 'No independent challenge is saved.'}</small>
+              </div>
+            </div>
           </div>
+          <p className="passport-unavailable">No overall score, learning-gain estimate, timed measure, or real-world certification is calculated.</p>
         </section>
-        <aside className="recommendation-card">
-          <div className="recommendation-top"><span className="recommendation-icon">↗</span><span className="eyebrow">A GENTLE NEXT STEP</span></div>
-          <h2>Keep building at your own pace.</h2><p>Try the practice flow again whenever you’re ready. There’s no timer and nothing to get wrong.</p>
+        <aside className="recommendation-card passport-recommendation">
+          <div className="recommendation-top"><span className="recommendation-icon">↗</span><span className="eyebrow">BASED ON YOUR RECORD</span></div>
+          <h2>{recommendation.title}</h2><p>{recommendation.body}</p>
           <div className="recommendation-rule" />
-          <div className="recommendation-next"><span>UP NEXT</span><strong>Guided practice</strong><small>Fictional payment · 3 small steps</small></div>
-          <button className="button recommendation-button" onClick={() => navigate('practice')}>Practise Again <span aria-hidden="true">↗</span></button>
+          <div className="recommendation-next"><span>YOUR SAVED DEMO DATA</span><strong>{hasSession ? `${Number(data.practice.exists) + Number(data.challenge.exists)} session record${Number(data.practice.exists) + Number(data.challenge.exists) === 1 ? '' : 's'}` : 'No session records'}</strong><small>Stored in this browser only</small></div>
+          <button className="button recommendation-button" onClick={practiseAgain}>Practise Again <span aria-hidden="true">↗</span></button>
+          <button className="button reset-demo-button" onClick={resetDemoData}>Reset My Demo Data</button>
           <div className="recommendation-safe">A safe space to learn. No real payments.</div>
         </aside>
       </div>
-      <div className="passport-footer"><ProgressSteps current={3} /><button className="text-link" onClick={() => navigate('home')}>Back to overview <span aria-hidden="true">→</span></button></div>
+      <div className="passport-footer"><ProgressSteps current={3} completedStages={[
+        ...(data.practice.completed ? [1] : []),
+        ...(data.challenge.submittedAttempts > 0 ? [2] : []),
+      ]} /><button className="text-link" onClick={() => navigate('home')}>Back to overview <span aria-hidden="true">→</span></button></div>
     </div>
   );
 }
