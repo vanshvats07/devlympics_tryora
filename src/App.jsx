@@ -1544,15 +1544,6 @@ export function derivePassportData(practiceSession, challengeStore, remediationS
   const practiceCounts = practice ? getPracticeEventCounts(practice) : null;
   const attempts = challenge?.attempts || [];
   const answeredAttempts = attempts.filter((attempt) => attempt.status === 'submitted' && attempt.result);
-  const interactedAttempts = attempts.filter((attempt) => (
-    attempt.events.some((event) => [
-      'recipient_selected',
-      'amount_selected',
-      'review_requested',
-      'verification_completed',
-      'answer_submitted',
-    ].includes(event.type))
-  ));
   const challengeEventCount = (types) => attempts.reduce((count, attempt) => (
     count + attempt.events.filter((event) => types.includes(event.type)).length
   ), 0);
@@ -1610,7 +1601,7 @@ export function derivePassportData(practiceSession, challengeStore, remediationS
     },
     challenge: challenge ? {
       exists: true,
-      attemptsStarted: interactedAttempts.length,
+      attemptsStarted: attempts.length,
       submittedAttempts: answeredAttempts.length,
       successful: successfulChallenge,
       incorrectRecipientChoices,
